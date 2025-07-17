@@ -3,6 +3,15 @@ import { createServer } from "node:http";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 import { Server } from "socket.io";
+import postgres from "postgres";
+import "dotenv/config";
+import { create } from "node:domain";
+
+const sql = postgres(process.env.POSTGRES_URL, {
+	ssl: "require",
+	connect_timeout: 30,
+	idle_timeout: 60,
+});
 
 const app = express();
 const server = createServer(app);
@@ -19,26 +28,43 @@ app.get("/", (req, res) => {
 	res.sendFile(join(__dirname, "index.html"));
 });
 
-const messages = {
-	general: "Welcome to General chat!",
-	random: "Random chat starts here.",
-	support: "How can we help you?",
-};
-
 io.on("connection", (socket) => {
-	console.log("a user connected");
-
-	socket.on("join room", ({ username, room }) => {
+	// join
+	socket.on("join", (room) => {
 		socket.join(room);
-		socket.emit(room, `${messages[room]} ${username}`);
-		socket.to(room).emit(room, `${username} joined ${room}`);
-		console.log(`Joined ${room}`);
+		console.log("socket joined: ", room);
+	});
+	// msg
+	socket.on("message", async ({ room, user, content, receiver_id, type }) => {
+		try {
+			await sql`insert into messages (receiver_id, sender_id, content, type) values (
+				${receiver_id},
+				${user.id},
+				${content},
+				${type}
+			)`;
+
+			const createdAt = new Date().toISOString();
+
+			io.to(room).emit("message", {
+				room,
+				sender: user,
+				content,
+				createdAt,
+			});
+
+			console.log("Sent: ", {
+				sender: user.displayName,
+				content,
+				createdAt,
+			});
+		} catch (error) {
+			console.error("insert msg failed ", error);
+		}
 	});
 
-	socket.on("chat message", ({ username, room, msg }) => {
-		io.to(room).emit("chat message", { username, room, msg });
-		console.log(`Msg by ${username} to ${room}: '${msg}'`);
-	});
+	// leave room
+	socket.on("leave", (room) => socket.leave(room));
 });
 
 server.listen(8000, () => {
