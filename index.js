@@ -35,29 +35,25 @@ io.on("connection", (socket) => {
 		console.log("socket joined: ", room);
 	});
 	// msg
-	socket.on("message", async ({ room, user, content, receiver_id, type }) => {
+	socket.on("message", async ({ room, sender_id, sender_displayName, content, type = "text" }) => {
 		try {
-			await sql`insert into messages (receiver_id, sender_id, content, type) values (
-				${receiver_id},
-				${user.id},
+			await sql`insert into messages (room_id, sender_id, sender_displayName, content, type) values (
+				${room},
+				${sender_id},
+				${sender_displayName},
 				${content},
 				${type}
 			)`;
 
-			const createdAt = new Date().toISOString();
-
-			io.to(room).emit("message", {
-				room,
-				sender: user,
+			const msg = {
+				sender_id,
+				sender_displayName,
 				content,
-				createdAt,
-			});
+				createdAt: new Date().toISOString(),
+			};
 
-			console.log("Sent: ", {
-				sender: user.displayName,
-				content,
-				createdAt,
-			});
+			io.to(room).emit("message", msg);
+			console.log("Sent: ", msg);
 		} catch (error) {
 			console.error("insert msg failed ", error);
 		}
