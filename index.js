@@ -84,15 +84,73 @@ io.on("connection", (socket) => {
 		}
 	});
 
+	// remove friendship
+	// TODO: test if it works
+
+	socket.on("remove_friendship", async ({ friend_id, user_id, room_id }) => {
+		try {
+			await sql.begin(async (sql) => {
+				// Remove both sides of the friendship (bidirectional)
+				await sql`
+				DELETE FROM friends
+				WHERE (user_id = ${user_id} AND friend_id = ${friend_id})
+			`;
+
+				// Delete the DM room (assuming it's unique to this friendship)
+				await sql`
+				DELETE FROM rooms
+				WHERE room_id = ${room_id};
+			`;
+
+				// Delete room membership for both users
+				await sql`
+				DELETE FROM room_members
+				WHERE room_id = ${room_id} AND user_id IN (${user_id}, ${friend_id});
+			`;
+			});
+
+			console.log(`✅ Success: remove_friendship`);
+		} catch (error) {
+			console.error(`❌ Error in remove_friendship:`, error);
+		}
+	});
+
+	// block friendship
+	// TODO: test if it works
+	socket.on("block_friendship", async ({ friend_id, user_id, room_id }) => {
+		try {
+			await sql`
+					UPDATE friends
+					SET status = 'blocked'
+					WHERE user_id = ${user_id} AND friend_id = ${friend_id}
+				`;
+
+			console.log(`✅ Success: remove_friendship`);
+		} catch (error) {
+			console.error(`❌ Error in remove_friendship:`, error);
+		}
+	});
+
 	// send message
-	socket.on("message", async ({ room: room_id, sender_id, sender_display_name, content, type = "text" }) => {
+	socket.on("message", async ({ room_id, sender_id, sender_image, sender_display_name, content, type = "text" }) => {
+		console.log({
+			room_id,
+			sender_id,
+			sender_image,
+			sender_display_name,
+			content,
+			type,
+		});
+
 		try {
 			await sql.begin(async (sql) => {
 				const [{ id }] = await sql`
-					INSERT INTO messages (room_id, sender_id, sender_display_name, content, type)
-					VALUES (${room_id}, ${sender_id}, ${sender_display_name}, ${content}, ${type})
+					INSERT INTO messages (room_id, sender_id, sender_display_name, sender_image, content, type)
+					VALUES (${room_id}, ${sender_id}, ${sender_display_name}, ${sender_image}, ${content}, ${type})
 					RETURNING id
 				`;
+
+				console.log("last_msg_id", id);
 
 				await sql`
 					UPDATE rooms
@@ -103,9 +161,11 @@ io.on("connection", (socket) => {
 
 			const msg = {
 				sender_id,
+				sender_image,
 				sender_display_name,
 				content,
-				created_at: new Date().toISOString(),
+				type,
+				createdAt: new Date().toISOString(),
 			};
 
 			io.to(room_id).emit("message", msg);
