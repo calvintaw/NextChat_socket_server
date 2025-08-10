@@ -5,7 +5,6 @@ import { dirname, join } from "node:path";
 import { Server } from "socket.io";
 import postgres from "postgres";
 import "dotenv/config";
-import { create } from "node:domain";
 
 const sql = postgres(process.env.POSTGRES_URL, {
 	ssl: "require",
@@ -30,9 +29,17 @@ app.get("/", (req, res) => {
 
 io.on("connection", (socket) => {
 	// join
-	socket.on("join", (room) => {
-		socket.join(room);
-		console.log("socket joined:", room);
+	socket.on("join", (room_id) => {
+		socket.join(room_id);
+		console.log(`socket joined: [${room_id}]`);
+	});
+
+	socket.on("typing started", (room_id, display_name) => {
+		io.to(room_id).emit("typing started", display_name);
+	});
+
+	socket.on("typing stopped", (room_id) => {
+		io.to(room_id).emit("typing stopped");
 	});
 
 	socket.on("create_dm", async ({}) => {});
@@ -99,7 +106,7 @@ io.on("connection", (socket) => {
 				// Delete the DM room (assuming it's unique to this friendship)
 				await sql`
 				DELETE FROM rooms
-				WHERE room_id = ${room_id};
+				WHERE id = ${room_id};
 			`;
 
 				// Delete room membership for both users
@@ -131,6 +138,19 @@ io.on("connection", (socket) => {
 		}
 	});
 
+	socket.on("delete message", async (id, room_id) => {
+		try {
+			await sql`
+					DELETE from messages
+					WHERE id = ${id}
+				`;
+			io.to(room_id).emit("message deleted", id);
+			console.log(`✅ Success: delete msg: `, id);
+		} catch (error) {
+			console.error(`❌ Error in remove_friendship:`, error);
+		}
+	});
+
 	// send message
 	socket.on("message", async ({ room_id, sender_id, sender_image, sender_display_name, content, type = "text" }) => {
 		console.log({
@@ -144,12 +164,13 @@ io.on("connection", (socket) => {
 
 		try {
 			await sql.begin(async (sql) => {
-				const [{ id }] = await sql`
+				const results = await sql`
 					INSERT INTO messages (room_id, sender_id, sender_display_name, sender_image, content, type)
 					VALUES (${room_id}, ${sender_id}, ${sender_display_name}, ${sender_image}, ${content}, ${type})
-					RETURNING id
+					RETURNING id, created_at
 				`;
 
+				const { id, created_at } = results[0];
 				console.log("last_msg_id", id);
 
 				await sql`
@@ -157,28 +178,63 @@ io.on("connection", (socket) => {
 					SET last_msg_id = ${id}
 					WHERE id = ${room_id}
 				`;
+
+				const msg = {
+					id,
+					sender_id,
+					sender_image,
+					sender_display_name,
+					content,
+					type,
+					createdAt: created_at,
+				};
+
+				io.to(room_id).emit("message", msg);
+				console.log("Sent:", msg);
 			});
-
-			const msg = {
-				sender_id,
-				sender_image,
-				sender_display_name,
-				content,
-				type,
-				createdAt: new Date().toISOString(),
-			};
-
-			io.to(room_id).emit("message", msg);
-			console.log("Sent:", msg);
 		} catch (error) {
 			console.error("insert msg failed", error);
 		}
 	});
 
 	// leave room
+	let timeoutId = null
+	let disconnectId = null
+
+	socket.on("online", () => {
+		if (socket.handshake.auth?.id) {
+			// Clear heartbeat timeout so user stays online
+			if (timeoutId) clearTimeout(timeoutId);
+			// Clear delayed disconnect offline timeout since user is online again
+			if (disconnectId) clearTimeout(disconnectId);
+
+			console.log(`online: ${socket.handshake.auth.name} ${socket.handshake.auth.id}`);
+			socket.broadcast.emit("online", socket.handshake.auth.id, true);
+
+			timeoutId = setTimeout(async () => {
+				console.log(`offline (heartbeat timeout): ${socket.handshake.auth.name} ${socket.handshake.auth.id}`);
+				socket.broadcast.emit("offline", socket.handshake.auth.id, false);
+				await sql`
+          UPDATE user_status SET online = FALSE WHERE user_id = ${socket.handshake.auth.id}
+        `;
+			}, 1000 * 20); // 20s timeout
+		}
+	});
+
 	socket.on("leave", (room) => socket.leave(room));
 });
+
+
 
 server.listen(8000, () => {
 	console.log("server running at http://localhost:8000");
 });
+
+
+
+
+
+
+
+
+
