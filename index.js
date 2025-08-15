@@ -165,8 +165,8 @@ io.on("connection", (socket) => {
 		try {
 			await sql.begin(async (sql) => {
 				const results = await sql`
-					INSERT INTO messages (room_id, sender_id, sender_display_name, sender_image, content, type)
-					VALUES (${room_id}, ${sender_id}, ${sender_display_name}, ${sender_image}, ${content}, ${type})
+					INSERT INTO messages (room_id, sender_id, content, type)
+					VALUES (${room_id}, ${sender_id}, ${content}, ${type})
 					RETURNING id, created_at
 				`;
 
@@ -197,6 +197,13 @@ io.on("connection", (socket) => {
 		}
 	});
 
+	socket.on("refetch-contacts", (user1, user2) => {
+		io.to(user1).emit("refetch-contacts")
+		io.to(user2).emit("refetch-contacts")
+		console.log("emitting ", user1, user2, "refetch contacts")
+	})
+
+
 	// leave room
 	let timeoutId = null
 	let disconnectId = null
@@ -208,11 +215,9 @@ io.on("connection", (socket) => {
 			// Clear delayed disconnect offline timeout since user is online again
 			if (disconnectId) clearTimeout(disconnectId);
 
-			console.log(`online: ${socket.handshake.auth.name} ${socket.handshake.auth.id}`);
 			socket.broadcast.emit("online", socket.handshake.auth.id, true);
 
 			timeoutId = setTimeout(async () => {
-				console.log(`offline (heartbeat timeout): ${socket.handshake.auth.name} ${socket.handshake.auth.id}`);
 				socket.broadcast.emit("offline", socket.handshake.auth.id, false);
 				await sql`
           UPDATE user_status SET online = FALSE WHERE user_id = ${socket.handshake.auth.id}
