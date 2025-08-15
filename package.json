@@ -13,7 +13,7 @@
 "scripts": {
   "dev": "nodemon index.js",
   "start": "node index.js",
-  "build": "echo 'Build complete. No compilation needed for plain Node.js.'"
+  "build": "npm install && echo 'Build complete. No compilation needed for plain Node.js.'"
 },
 	"main": "index.js",
 	"devDependencies": {},
