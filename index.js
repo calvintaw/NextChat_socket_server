@@ -16,7 +16,12 @@ const app = express();
 const server = createServer(app);
 const io = new Server(server, {
 	cors: {
-		origin: "http://localhost:3000", // [] for multiple origin
+		origin: [
+			"http://localhost:3000",
+			"https://telegram-clone-five-delta.vercel.app/",
+			"https://telegram-clone-ambitiouscalvins-projects.vercel.app/",
+			"https://telegram-clone-git-main-ambitiouscalvins-projects.vercel.app/",
+		], // [] for multiple origin
 		credentials: true,
 	},
 });

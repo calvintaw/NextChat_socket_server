@@ -10,9 +10,11 @@
 		"postgres": "^3.4.7",
 		"socket.io": "^4.8.1"
 	},
-	"scripts": {
-		"dev": "nodemon index.js"
-	},
+"scripts": {
+  "dev": "nodemon index.js",
+  "start": "node index.js",
+  "build": "echo 'Build complete. No compilation needed for plain Node.js.'"
+},
 	"main": "index.js",
 	"devDependencies": {},
 	"keywords": [],
