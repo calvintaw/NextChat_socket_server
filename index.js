@@ -19,6 +19,7 @@ const io = new Server(server, {
 		origin: [
 			"http://localhost:3000",
 			"https://telegram-clone-five-delta.vercel.app",
+			"https://discord-clone-ten-iota.vercel.app",
 			"https://telegram-clone-ambitiouscalvins-projects.vercel.app",
 			"https://telegram-clone-git-main-ambitiouscalvins-projects.vercel.app",
 		],
