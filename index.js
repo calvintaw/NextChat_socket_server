@@ -6,6 +6,9 @@ import { Server } from "socket.io";
 import postgres from "postgres";
 import "dotenv/config";
 
+if (!process.env.POSTGRES_URL) {
+	throw new Error("POSTGRES_URL environment variable is not defined");
+}
 const sql = postgres(process.env.POSTGRES_URL, {
 	ssl: "require",
 	connect_timeout: 30,
@@ -34,8 +37,17 @@ app.get("/", (req, res) => {
 	res.sendFile(join(__dirname, "index.html"));
 });
 
+
+const userSockets = new Map();
+const timeoutMap = new Map();
+
 io.on("connection", (socket) => {
-	// join
+	
+
+
+
+	//=======================================
+
 	socket.on("join", (room_id) => {
 		socket.join(room_id);
 		console.log(`socket joined: [${room_id}]`);
@@ -204,36 +216,68 @@ io.on("connection", (socket) => {
 		}
 	});
 
-	socket.on("refetch-contacts", (user1, user2) => {
-		io.to(user1).emit("refetch-contacts")
-		io.to(user2).emit("refetch-contacts")
-		console.log("emitting ", user1, user2, "refetch contacts")
-	})
-
-
-	// leave room
-	let timeoutId = null
-	let disconnectId = null
-
-	socket.on("online", () => {
-		if (socket.handshake.auth?.id) {
-			// Clear heartbeat timeout so user stays online
-			if (timeoutId) clearTimeout(timeoutId);
-			// Clear delayed disconnect offline timeout since user is online again
-			if (disconnectId) clearTimeout(disconnectId);
-
-			socket.broadcast.emit("online", socket.handshake.auth.id, true);
-
-			timeoutId = setTimeout(async () => {
-				socket.broadcast.emit("offline", socket.handshake.auth.id, false);
-				await sql`
-          UPDATE user_status SET online = FALSE WHERE user_id = ${socket.handshake.auth.id}
-        `;
-			}, 1000 * 20); // 20s timeout
-		}
+	socket.on("refresh-contacts-page", (currentUser_id, targetUser_id) => {
+		io.to(currentUser_id).emit("refresh-contacts-page");
+		io.to(targetUser_id).emit("refresh-contacts-page");
 	});
 
 	socket.on("leave", (room) => socket.leave(room));
+
+
+	const userId = socket.handshake.auth?.id;
+	if (userId) {
+			socket.join(userId);
+
+			// Track socket
+			if (!userSockets.has(userId)) userSockets.set(userId, new Set());
+			userSockets.get(userId).add(socket);
+
+			const setOnline = async () => {
+				// Clear previous timeout
+				if (timeoutMap.has(userId)) clearTimeout(timeoutMap.get(userId));
+				timeoutMap.delete(userId);
+
+				socket.broadcast.emit("online", userId, true);
+
+				await sql`
+      INSERT INTO user_status (user_id, online)
+      VALUES (${userId}, TRUE)
+      ON CONFLICT (user_id)
+      DO UPDATE SET online = TRUE;
+    `;
+
+				// Schedule offline if no heartbeat
+				const timeout = setTimeout(async () => {
+					// Only mark offline if no active sockets
+					const sockets = userSockets.get(userId);
+					if (!sockets || sockets.size === 0) {
+						socket.broadcast.emit("offline", userId, false);
+						console.log("set offline", userId);
+						await sql`
+          UPDATE user_status SET online = FALSE WHERE user_id = ${userId};
+        `;
+					}
+					timeoutMap.delete(userId);
+				}, 1000 * 25);
+
+				timeoutMap.set(userId, timeout);
+			};
+
+			setOnline();
+
+			socket.on("online", async () => {
+				await setOnline();
+			});
+
+			socket.on("disconnect", () => {
+				const sockets = userSockets.get(userId);
+				if (sockets) {
+					sockets.delete(socket);
+				}
+			});	
+
+		}
+
 });
 
 
