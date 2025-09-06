@@ -219,6 +219,7 @@ io.on("connection", (socket) => {
 	socket.on("refresh-contacts-page", (currentUser_id, targetUser_id) => {
 		io.to(currentUser_id).emit("refresh-contacts-page");
 		io.to(targetUser_id).emit("refresh-contacts-page");
+		console.log("refresh-contacts-page" , currentUser_id, targetUser_id);
 		
 	});
 
