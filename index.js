@@ -43,9 +43,6 @@ const timeoutMap = new Map();
 
 io.on("connection", (socket) => {
 	
-
-
-
 	//=======================================
 
 	socket.on("join", (room_id) => {
@@ -63,100 +60,6 @@ io.on("connection", (socket) => {
 
 	socket.on("create_dm", async ({}) => {});
 
-	// request friendship
-	socket.on("request_friendship", async ({ friend_id, user_id }) => {
-		try {
-			await sql.begin(async (sql) => {
-				await sql`
-					INSERT INTO friends (user_id, friend_id, status)
-					VALUES (${user_id}, ${friend_id}, 'pending')
-				`;
-			});
-
-			console.log(`Success: request_friendship`);
-		} catch (error) {
-			console.error(error);
-		}
-	});
-
-	// accept friendship
-	socket.on("accept_friendship", async ({ friend_id, user_id, room_id }) => {
-		try {
-			await sql.begin(async (sql) => {
-				await sql`
-					UPDATE friends
-					SET status = 'accepted'
-					WHERE user_id = ${user_id} AND friend_id = ${friend_id}
-				`;
-
-				await sql`
-					INSERT INTO rooms (id, type)
-					VALUES (${room_id}, 'dm')
-					ON CONFLICT DO NOTHING
-				`;
-
-				await sql`
-					INSERT INTO room_members (room_id, user_id)
-					VALUES
-						(${room_id}, ${user_id}),
-						(${room_id}, ${friend_id})
-					ON CONFLICT DO NOTHING
-				`;
-			});
-
-			console.log(`Success: accept_friendship`);
-		} catch (error) {
-			console.error(error);
-		}
-	});
-
-	// remove friendship
-	// TODO: test if it works
-
-	socket.on("remove_friendship", async ({ friend_id, user_id, room_id }) => {
-		try {
-			await sql.begin(async (sql) => {
-				// Remove both sides of the friendship (bidirectional)
-				await sql`
-				DELETE FROM friends
-				WHERE (user_id = ${user_id} AND friend_id = ${friend_id})
-			`;
-
-				// Delete the DM room (assuming it's unique to this friendship)
-				await sql`
-				DELETE FROM rooms
-				WHERE id = ${room_id};
-			`;
-
-				// Delete room membership for both users
-				await sql`
-				DELETE FROM room_members
-				WHERE room_id = ${room_id} AND user_id IN (${user_id}, ${friend_id});
-			`;
-			});
-
-			console.log(`✅ Success: remove_friendship`);
-		} catch (error) {
-			console.error(`❌ Error in remove_friendship:`, error);
-		}
-	});
-
-	// block friendship
-	// TODO: test if it works
-	socket.on("block_friendship", async ({ friend_id, user_id, room_id }) => {
-		try {
-			await sql`
-					UPDATE friends
-					SET status = 'blocked'
-					WHERE user_id = ${user_id} AND friend_id = ${friend_id}
-				`;
-
-			console.log(`✅ Success: remove_friendship`);
-		} catch (error) {
-			console.error(`❌ Error in remove_friendship:`, error);
-		}
-	});
-
 	socket.on("delete message", async (id, room_id) => {
 		try {
 			await sql`
@@ -170,7 +73,6 @@ io.on("connection", (socket) => {
 		}
 	});
 
-	// send message
 	socket.on("message", async ({ room_id, sender_id, sender_image, sender_display_name, content, type = "text" }) => {
 		console.log({
 			room_id,
@@ -226,6 +128,7 @@ io.on("connection", (socket) => {
 	socket.on("leave", (room) => socket.leave(room));
 
 
+	// not perfect: I've run out of ideas. somethings out of sync with other users on online status
 	const userId = socket.handshake.auth?.id;
 	if (userId) {
 			socket.join(userId);
@@ -242,11 +145,11 @@ io.on("connection", (socket) => {
 				socket.broadcast.emit("online", userId, true);
 
 				await sql`
-      INSERT INTO user_status (user_id, online)
-      VALUES (${userId}, TRUE)
-      ON CONFLICT (user_id)
-      DO UPDATE SET online = TRUE;
-    `;
+					INSERT INTO user_status (user_id, online)
+					VALUES (${userId}, TRUE)
+					ON CONFLICT (user_id)
+					DO UPDATE SET online = TRUE;
+				`;
 
 				// Schedule offline if no heartbeat
 				const timeout = setTimeout(async () => {
@@ -278,7 +181,7 @@ io.on("connection", (socket) => {
 				}
 			});	
 
-		}
+	}
 
 });
 
