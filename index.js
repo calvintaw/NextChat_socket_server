@@ -97,12 +97,6 @@ io.on("connection", (socket) => {
 
 				const { id, created_at } = results[0];
 
-				await sql`
-					UPDATE rooms
-					SET last_msg_id = ${id}
-					WHERE id = ${room_id}
-				`;
-
 				const msg = {
 					id,
 					sender_id,
@@ -122,23 +116,15 @@ io.on("connection", (socket) => {
 		}
 	});
 
-	const system = {
-		idx: 6,
-		id: "e4587e82-4aec-51ef-86b6-5c40ce364ac0",
-		username: "system",
-		display_name: "AI BOT",
-		email: "system@chatapp.bot",
-		image: "https://ydcbbjaovlxvvoecbblp.supabase.co/storage/v1/object/public/uploads/K8qmuvYbUHD23A9ukinCs.png",
-		created_at: "2025-09-07 17:19:00.98432+00",
-	};
 
+
+		
 	socket.on(
 		"system",
 		async ({ room_id, sender_id, sender_image, sender_display_name, content, type = "text", replyTo }) => {
 			try {
-				// ====== Existing user message insertion (unchanged) ======
 				await sql.begin(async (sql) => {
-
+					// ====== User message insert + broadcast ======
 					const msg = {
 						id: randomUUID(),
 						sender_id,
@@ -153,32 +139,25 @@ io.on("connection", (socket) => {
 					io.to(room_id).emit("message", msg);
 					console.log("Sent:", msg);
 
-					// ====== OpenAI GPT-3.5-turbo reply with error handling ======
+					// ====== OpenAI Responses API reply ======
 					try {
-						// const aiResponse = await openai.chat.completions.create({
-						// 	model: "gpt-3.5-turbo",
-						// 	messages: [
-						// 		{ role: "system", content: "You are a helpful AI assistant." },
-						// 		{ role: "user", content },
-						// 	],
-						// 	max_tokens: 200, // limit tokens for cost efficiency
-						// });
-
-						const aiResponse = openai.responses.create({
+						const aiResponse = await openai.responses.create({
 							model: "gpt-3.5-turbo",
-							input: "write a haiku about ai",
-							store: true,
+							input: [
+								{ role: "system", content: "You are a helpful AI assistant." },
+								{ role: "user", content },
+							],
 							max_output_tokens: 200,
 						});
 
-						const aiText = (await aiResponse).output_text || "Sorry, I couldn't generate a response.";
+						const aiText = aiResponse.output_text || "Sorry, I couldn't generate a response.";
 
 						// Insert AI reply into DB
 						const aiResults = await sql`
-            INSERT INTO messages (room_id, sender_id, content, type)
-            VALUES (${room_id}, 'system', ${aiText}, 'text')
-            RETURNING id, created_at
-          `;
+							INSERT INTO messages (room_id, sender_id, content, type)
+							VALUES (${room_id}, 'system', ${aiText}, 'text')
+							RETURNING id, created_at
+						`;
 
 						const { id: aiId, created_at: aiCreatedAt } = aiResults[0];
 
@@ -197,7 +176,8 @@ io.on("connection", (socket) => {
 						io.to(room_id).emit("message", aiMsg);
 						console.log("AI Sent:", aiMsg);
 					} catch (err) {
-						console.log(err)
+						console.error("OpenAI error:", err);
+
 						if (err.code === "insufficient_quota" || err.status === 429) {
 							console.warn("OpenAI quota exceeded. Sending fallback message.");
 							io.to(room_id).emit("message", {
@@ -206,12 +186,11 @@ io.on("connection", (socket) => {
 								sender_display_name: "AI BOT",
 								sender_image:
 									"https://ydcbbjaovlxvvoecbblp.supabase.co/storage/v1/object/public/uploads/K8qmuvYbUHD23A9ukinCs.png",
-								content: "AI reply unavailable (quota exceeded). [Sorry, I have not found new models that offer free tiers]",
+								content:
+									"AI reply unavailable (quota exceeded). [Sorry, I have not found new models that offer free tiers]",
 								type: "text",
 								createdAt: new Date().toISOString(),
 							});
-						} else {
-							console.error("OpenAI error:", err);
 						}
 					}
 				});
@@ -220,7 +199,6 @@ io.on("connection", (socket) => {
 			}
 		}
 	);
-
 
 	
 	
