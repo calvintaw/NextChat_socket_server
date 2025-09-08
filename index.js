@@ -8,6 +8,7 @@ import "dotenv/config";
 
 import OpenAI from "openai";
 import client from "openai";
+import { randomUUID } from "node:crypto";
 
 const openai = new OpenAI({
 	apiKey: process.env["OPENAI_API_KEY"],
@@ -137,28 +138,15 @@ io.on("connection", (socket) => {
 			try {
 				// ====== Existing user message insertion (unchanged) ======
 				await sql.begin(async (sql) => {
-					const results = await sql`
-          INSERT INTO messages (room_id, sender_id, content, type, replyTo)
-          VALUES (${room_id}, ${sender_id}, ${content}, ${type}, ${replyTo})
-          RETURNING id, created_at
-        `;
-
-					const { id, created_at } = results[0];
-
-					await sql`
-          UPDATE rooms
-          SET last_msg_id = ${id}
-          WHERE id = ${room_id}
-        `;
 
 					const msg = {
-						id,
+						id: randomUUID(),
 						sender_id,
 						sender_image,
 						sender_display_name,
 						content,
 						type,
-						createdAt: created_at,
+						createdAt: new Date().toISOString(),
 						replyTo,
 					};
 
@@ -218,7 +206,7 @@ io.on("connection", (socket) => {
 								sender_display_name: "AI BOT",
 								sender_image:
 									"https://ydcbbjaovlxvvoecbblp.supabase.co/storage/v1/object/public/uploads/K8qmuvYbUHD23A9ukinCs.png",
-								content: "AI reply unavailable (quota exceeded).",
+								content: "AI reply unavailable (quota exceeded). [Sorry, I have not found new models that offer free tiers]",
 								type: "text",
 								createdAt: new Date().toISOString(),
 							});
