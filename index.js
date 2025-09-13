@@ -30,6 +30,7 @@ const io = new Server(server, {
 	cors: {
 		origin: [
 			"http://localhost:3000",
+			"https://next-chat-discord-clone.vercel.app",
 			"https://telegram-clone-five-delta.vercel.app",
 			"https://discord-clone-ten-iota.vercel.app",
 			"https://telegram-clone-ambitiouscalvins-projects.vercel.app",
@@ -117,22 +118,24 @@ io.on("connection", (socket) => {
 	});
 
 
-
-		
 	socket.on(
 		"system",
 		async ({ room_id, sender_id, sender_image, sender_display_name, content, type = "text", replyTo }) => {
 			try {
 				await sql.begin(async (sql) => {
-					// ====== User message insert + broadcast ======
+					const results = await sql`
+					INSERT INTO messages (room_id, sender_id, content, type, replyTo)
+					VALUES (${room_id}, ${sender_id}, ${content}, ${type}, ${replyTo})
+					RETURNING id, created_at
+				`;
 					const msg = {
-						id: randomUUID(),
+						id: results[0].id,
 						sender_id,
 						sender_image,
 						sender_display_name,
 						content,
 						type,
-						createdAt: new Date().toISOString(),
+						createdAt: results[0].created_at,
 						replyTo,
 					};
 
