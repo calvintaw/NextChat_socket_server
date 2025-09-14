@@ -8,11 +8,9 @@ import "dotenv/config";
 
 import OpenAI from "openai";
 
-
 const openai = new OpenAI({
 	apiKey: process.env["OPENAI_API_KEY"],
 });
-
 
 if (!process.env.POSTGRES_URL) {
 	throw new Error("POSTGRES_URL environment variable is not defined");
@@ -39,19 +37,16 @@ const io = new Server(server, {
 	},
 });
 
-
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
 app.get("/", (req, res) => {
 	res.sendFile(join(__dirname, "index.html"));
 });
 
-
 const userSockets = new Map();
 const timeoutMap = new Map();
 
 io.on("connection", (socket) => {
-	
 	//=======================================
 
 	socket.on("join", (room_id) => {
@@ -74,7 +69,7 @@ io.on("connection", (socket) => {
 	});
 
 	socket.on("edit message", async (id, room_id, content) => {
-			io.to(room_id).emit("message edited", id, content);
+		io.to(room_id).emit("message edited", id, content);
 	});
 
 	socket.on("add_reaction_msg", (id, user_id, room_id, emoji) => {
@@ -85,41 +80,43 @@ io.on("connection", (socket) => {
 		io.to(room_id).emit("remove_reaction_msg", id, user_id, emoji, "remove");
 	});
 
-
-	socket.on("message", async ({ room_id, sender_id, sender_image, sender_display_name, content, type = "text", replyTo }) => {
-		try {
-			await sql.begin(async (sql) => {
-				const results = await sql`
+	socket.on(
+		"message",
+		async ({ tempId, room_id, sender_id, sender_image, sender_display_name, content, type = "text", replyTo }) => {
+			try {
+				await sql.begin(async (sql) => {
+					const results = await sql`
 					INSERT INTO messages (room_id, sender_id, content, type, replyTo)
 					VALUES (${room_id}, ${sender_id}, ${content}, ${type}, ${replyTo})
 					RETURNING id, created_at
 				`;
 
-				const { id, created_at } = results[0];
+					const { id, created_at } = results[0];
 
-				const msg = {
-					id,
-					sender_id,
-					sender_image,
-					sender_display_name,
-					content,
-					type,
-					createdAt: created_at,
-					replyTo
-				};
+					const msg = {
+						id,
+						sender_id,
+						sender_image,
+						sender_display_name,
+						content,
+						type,
+						createdAt: created_at,
+						replyTo,
+						tempId,
+					};
 
-				io.to(room_id).emit("message", msg);
-				console.log("Sent:", msg);
-			});
-		} catch (error) {
-			console.error("insert msg failed", error);
+					io.to(room_id).emit("message", msg);
+					console.log("Sent:", msg);
+				});
+			} catch (error) {
+				console.error("insert msg failed", error);
+			}
 		}
-	});
-
+	);
 
 	socket.on(
 		"system",
-		async ({ room_id, sender_id, sender_image, sender_display_name, content, type = "text", replyTo }) => {
+		async ({ tempId, room_id, sender_id, sender_image, sender_display_name, content, type = "text", replyTo }) => {
 			try {
 				await sql.begin(async (sql) => {
 					const results = await sql`
@@ -129,6 +126,7 @@ io.on("connection", (socket) => {
 				`;
 					const msg = {
 						id: results[0].id,
+						tempId,
 						sender_id,
 						sender_image,
 						sender_display_name,
@@ -167,8 +165,7 @@ io.on("connection", (socket) => {
 						const aiMsg = {
 							id: aiId,
 							sender_id: "system",
-							sender_image:
-								"https://ydcbbjaovlxvvoecbblp.supabase.co/storage/v1/object/public/uploads/system.png",
+							sender_image: "https://ydcbbjaovlxvvoecbblp.supabase.co/storage/v1/object/public/uploads/system.png",
 							sender_display_name: "AI BOT",
 							content: aiText,
 							type: "text",
@@ -187,8 +184,7 @@ io.on("connection", (socket) => {
 								id: "system-fallback-" + Date.now(),
 								sender_id: "system",
 								sender_display_name: "AI BOT",
-								sender_image:
-									"https://ydcbbjaovlxvvoecbblp.supabase.co/storage/v1/object/public/uploads/system.png",
+								sender_image: "https://ydcbbjaovlxvvoecbblp.supabase.co/storage/v1/object/public/uploads/system.png",
 								content:
 									"AI reply unavailable (quota exceeded). [Sorry, I have not found new models that offer free tiers]",
 								type: "text",
@@ -203,82 +199,70 @@ io.on("connection", (socket) => {
 		}
 	);
 
-	
-	
 	socket.on("refresh-contacts-page", (currentUser_id, targetUser_id) => {
 		io.to(currentUser_id).emit("refresh-contacts-page");
 		io.to(targetUser_id).emit("refresh-contacts-page");
-		console.log("refresh-contacts-page" , currentUser_id, targetUser_id);
-		
+		console.log("refresh-contacts-page", currentUser_id, targetUser_id);
 	});
 
 	socket.on("leave", (room) => socket.leave(room));
 
-
 	// not perfect: I've run out of ideas. somethings out of sync with other users on online status
 	const userId = socket.handshake.auth?.id;
 	if (userId) {
-			socket.join(userId);
+		socket.join(userId);
 
-			// Track socket
-			if (!userSockets.has(userId)) userSockets.set(userId, new Set());
-			userSockets.get(userId).add(socket);
+		// Track socket
+		if (!userSockets.has(userId)) userSockets.set(userId, new Set());
+		userSockets.get(userId).add(socket);
 
-			const setOnline = async () => {
-				// Clear previous timeout
-				if (timeoutMap.has(userId)) clearTimeout(timeoutMap.get(userId));
-				timeoutMap.delete(userId);
+		const setOnline = async () => {
+			// Clear previous timeout
+			if (timeoutMap.has(userId)) clearTimeout(timeoutMap.get(userId));
+			timeoutMap.delete(userId);
 
-				socket.broadcast.emit("online", userId, true);
+			socket.broadcast.emit("online", userId, true);
 
-				await sql`
+			await sql`
 					INSERT INTO user_status (user_id, online)
 					VALUES (${userId}, TRUE)
 					ON CONFLICT (user_id)
 					DO UPDATE SET online = TRUE;
 				`;
 
-				// Schedule offline if no heartbeat
-				const timeout = setTimeout(async () => {
-					// Only mark offline if no active sockets
-					const sockets = userSockets.get(userId);
-					if (!sockets || sockets.size === 0) {
-						socket.broadcast.emit("offline", userId, false);
-						console.log("set offline", userId);
-						await sql`
+			// Schedule offline if no heartbeat
+			const timeout = setTimeout(async () => {
+				// Only mark offline if no active sockets
+				const sockets = userSockets.get(userId);
+				if (!sockets || sockets.size === 0) {
+					socket.broadcast.emit("offline", userId, false);
+					console.log("set offline", userId);
+					await sql`
           UPDATE user_status SET online = FALSE WHERE user_id = ${userId};
         `;
-					}
-					timeoutMap.delete(userId);
-				}, 1000 * 25);
-
-				timeoutMap.set(userId, timeout);
-			};
-
-			setOnline();
-
-			socket.on("online", async () => {
-				await setOnline();
-			});
-
-			socket.on("disconnect", () => {
-				const sockets = userSockets.get(userId);
-				if (sockets) {
-					sockets.delete(socket);
 				}
-			});
+				timeoutMap.delete(userId);
+			}, 1000 * 25);
 
+			timeoutMap.set(userId, timeout);
+		};
+
+		setOnline();
+
+		socket.on("online", async () => {
+			await setOnline();
+		});
+
+		socket.on("disconnect", () => {
+			const sockets = userSockets.get(userId);
+			if (sockets) {
+				sockets.delete(socket);
+			}
+		});
 	}
-
 });
-
-
 
 const PORT = process.env.PORT || 8000;
 server.listen(PORT, () => {
 	console.log(`server running at http://localhost:${PORT}`);
 });
-
-
-
-
