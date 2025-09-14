@@ -7,8 +7,7 @@ import postgres from "postgres";
 import "dotenv/config";
 
 import OpenAI from "openai";
-import client from "openai";
-import { randomUUID } from "node:crypto";
+
 
 const openai = new OpenAI({
 	apiKey: process.env["OPENAI_API_KEY"],
@@ -169,7 +168,7 @@ io.on("connection", (socket) => {
 							id: aiId,
 							sender_id: "system",
 							sender_image:
-								"https://ydcbbjaovlxvvoecbblp.supabase.co/storage/v1/object/public/uploads/K8qmuvYbUHD23A9ukinCs.png",
+								"https://ydcbbjaovlxvvoecbblp.supabase.co/storage/v1/object/public/uploads/system.png",
 							sender_display_name: "AI BOT",
 							content: aiText,
 							type: "text",
@@ -181,6 +180,7 @@ io.on("connection", (socket) => {
 					} catch (err) {
 						console.error("OpenAI error:", err);
 
+						// @ts-ignore
 						if (err.code === "insufficient_quota" || err.status === 429) {
 							console.warn("OpenAI quota exceeded. Sending fallback message.");
 							io.to(room_id).emit("message", {
@@ -188,7 +188,7 @@ io.on("connection", (socket) => {
 								sender_id: "system",
 								sender_display_name: "AI BOT",
 								sender_image:
-									"https://ydcbbjaovlxvvoecbblp.supabase.co/storage/v1/object/public/uploads/K8qmuvYbUHD23A9ukinCs.png",
+									"https://ydcbbjaovlxvvoecbblp.supabase.co/storage/v1/object/public/uploads/system.png",
 								content:
 									"AI reply unavailable (quota exceeded). [Sorry, I have not found new models that offer free tiers]",
 								type: "text",
