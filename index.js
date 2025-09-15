@@ -17,8 +17,9 @@ if (!process.env.POSTGRES_URL) {
 }
 const sql = postgres(process.env.POSTGRES_URL, {
 	ssl: "require",
-	connect_timeout: 30,
-	idle_timeout: 60,
+	idle_timeout: 300,
+	connect_timeout: 60,
+	prepare: false,
 });
 
 const app = express();
