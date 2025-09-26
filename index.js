@@ -6,7 +6,7 @@ import { Server } from "socket.io";
 import postgres from "postgres";
 import "dotenv/config";
 
-import OpenAI from "openai";
+import { OpenAI } from "openai";
 
 const openai = new OpenAI({
 	apiKey: process.env["OPENAI_API_KEY"],
@@ -142,16 +142,21 @@ io.on("connection", (socket) => {
 
 					// ====== OpenAI Responses API reply ======
 					try {
-						const aiResponse = await openai.responses.create({
+						const aiResponse = await openai.chat.completions.create({
 							model: "gpt-3.5-turbo",
-							input: [
+							messages: [
 								{ role: "system", content: "You are a helpful AI assistant." },
 								{ role: "user", content },
 							],
-							max_output_tokens: 200,
+							temperature: 0.7,
+							top_p: 0.7,
+							frequency_penalty: 1,
+							max_tokens: 1536,
+							top_k: 50,
 						});
 
-						const aiText = aiResponse.output_text || "Sorry, I couldn't generate a response.";
+						const aiText = aiResponse.choices[0].message.content || "Sorry, I couldn't generate a response.";
+						console.log(`Assistant: ${aiText}`);
 
 						// Insert AI reply into DB
 						const aiResults = await sql`
