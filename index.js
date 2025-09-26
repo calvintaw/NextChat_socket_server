@@ -138,10 +138,11 @@ io.on("connection", (socket) => {
 					};
 
 					io.to(room_id).emit("message", msg);
-					console.log("Sent:", msg);
+					console.log("Sent system:", msg);
 
 					// ====== OpenAI Responses API reply ======
 					try {
+						console.log("AI response try block running")
 						const aiResponse = await openai.responses.create({
 							model: "gpt-3.5-turbo",
 							input: [
