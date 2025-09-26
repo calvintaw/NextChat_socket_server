@@ -138,12 +138,12 @@ io.on("connection", (socket) => {
 					};
 
 					io.to(room_id).emit("message", msg);
-					console.log("Sent:", msg);
+					console.log("Sent system:", msg);
 
 					// ====== OpenAI Responses API reply ======
 					try {
 						const aiResponse = await openai.chat.completions.create({
-							model: "gpt-3.5-turbo",
+							model: "gpt-4o-mini-2024-07-18",
 							messages: [
 								{ role: "system", content: "You are a helpful AI assistant." },
 								{ role: "user", content },
