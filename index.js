@@ -8,8 +8,11 @@ import "dotenv/config";
 
 import OpenAI from "openai";
 
-const openai = new OpenAI({
-	apiKey: process.env["OPENAI_API_KEY"],
+const openai = new OpenAI(
+	
+	{
+  baseURL: 'https://api.aimlapi.com/v1',
+		apiKey: process.env["OPENAI_API_KEY"],
 });
 
 if (!process.env.POSTGRES_URL) {
