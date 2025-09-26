@@ -144,7 +144,7 @@ io.on("connection", (socket) => {
 					try {
 						console.log("AI response try block running")
 						const aiResponse = await openai.responses.create({
-							model: "gpt-3.5-turbo",
+							model: "gpt-4o-mini-2024-07-18",
 							input: [
 								{ role: "system", content: "You are a helpful AI assistant." },
 								{ role: "user", content },
