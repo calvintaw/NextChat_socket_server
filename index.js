@@ -51,9 +51,9 @@ const timeoutMap = new Map();
 io.on("connection", (socket) => {
 	//=======================================
 
-	socket.on("join", (room_id) => {
-		socket.join(room_id);
-		console.log(`socket joined: [${room_id}]`);
+	socket.on("join", (id) => {
+		socket.join(id);
+		console.log(`socket joined: [${id}]`);
 	});
 
 	socket.on("typing started", (room_id, display_name) => {
@@ -68,18 +68,22 @@ io.on("connection", (socket) => {
 
 	socket.on("delete message", async (id, room_id) => {
 		io.to(room_id).emit("message deleted", id);
+		console.log(`room_id: msg deleted ${room_id}`);
 	});
 
 	socket.on("edit message", async (id, room_id, content) => {
 		io.to(room_id).emit("message edited", id, content);
+		console.log(`room_id: msg edited ${room_id} content: ${content}`);
 	});
 
 	socket.on("add_reaction_msg", (id, user_id, room_id, emoji) => {
 		io.to(room_id).emit("add_reaction_msg", id, user_id, emoji, "add");
+		console.log(`room_id: reaction added ${room_id} content: ${emoji}`);
 	});
 
 	socket.on("remove_reaction_msg", (id, user_id, room_id, emoji) => {
 		io.to(room_id).emit("remove_reaction_msg", id, user_id, emoji, "remove");
+		console.log(`room_id: reaction removed ${room_id} content: ${emoji}`);
 	});
 
 	socket.on(
@@ -108,7 +112,7 @@ io.on("connection", (socket) => {
 					};
 
 					io.to(room_id).emit("message", msg);
-					console.log("Sent:", msg);
+					console.log("Sent:", { sender_display_name, content });
 				});
 			} catch (error) {
 				console.error("insert msg failed", error);
@@ -139,24 +143,25 @@ io.on("connection", (socket) => {
 					};
 
 					io.to(room_id).emit("message", msg);
-					console.log("Sent system:", msg);
+					console.log("Sent system:", { sender_display_name, content });
 
 					// ====== OpenAI Responses API reply ======
 					try {
-						const aiResponse = await openai.chat.completions.create({
-							model: "gpt-4o-mini-2024-07-18",
-							messages: [
-								{ role: "system", content: "You are a helpful AI assistant." },
-								{ role: "user", content },
-							],
-							temperature: 0.7,
-							top_p: 0.7,
-							frequency_penalty: 1,
-							max_tokens: 1536,
-							top_k: 50,
-						});
-
-						const aiText = aiResponse.choices[0].message.content || "Sorry, I couldn't generate a response.";
+						// const aiResponse = await openai.chat.completions.create({
+						// 	model: "gpt-4o-mini-2024-07-18",
+						// 	messages: [
+						// 		{ role: "system", content: "You are a helpful AI assistant." },
+						// 		{ role: "user", content },
+						// 	],
+						// 	temperature: 0.7,
+						// 	top_p: 0.7,
+						// 	frequency_penalty: 1,
+						// 	max_tokens: 1536,
+						// 	top_k: 50,
+						// });
+						const aiText =
+							// aiResponse?.choices[0].message.content ||
+							"Sorry, I couldn't generate a response.";
 						console.log(`Assistant: ${aiText}`);
 
 						// Insert AI reply into DB
@@ -217,41 +222,43 @@ io.on("connection", (socket) => {
 	// not perfect: I've run out of ideas. somethings out of sync with other users on online status
 	const userId = socket.handshake.auth?.id;
 	if (userId) {
-		socket.join(userId);
-
 		// Track socket
 		if (!userSockets.has(userId)) userSockets.set(userId, new Set());
 		userSockets.get(userId).add(socket);
 
 		const setOnline = async () => {
-			// Clear previous timeout
-			if (timeoutMap.has(userId)) clearTimeout(timeoutMap.get(userId));
-			timeoutMap.delete(userId);
+			try {
+				// Clear previous timeout
+				if (timeoutMap.has(userId)) clearTimeout(timeoutMap.get(userId));
+				timeoutMap.delete(userId);
 
-			socket.broadcast.emit("online", userId, true);
+				socket.broadcast.emit("online", userId, true);
 
-			await sql`
+				await sql`
 					INSERT INTO user_status (user_id, online)
 					VALUES (${userId}, TRUE)
 					ON CONFLICT (user_id)
 					DO UPDATE SET online = TRUE;
 				`;
 
-			// Schedule offline if no heartbeat
-			const timeout = setTimeout(async () => {
-				// Only mark offline if no active sockets
-				const sockets = userSockets.get(userId);
-				if (!sockets || sockets.size === 0) {
-					socket.broadcast.emit("offline", userId, false);
-					console.log("set offline", userId);
-					await sql`
+				// Schedule offline if no heartbeat
+				const timeout = setTimeout(async () => {
+					// Only mark offline if no active sockets
+					const sockets = userSockets.get(userId);
+					if (!sockets || sockets.size === 0) {
+						socket.broadcast.emit("offline", userId, false);
+						console.log("set offline", userId);
+						await sql`
           UPDATE user_status SET online = FALSE WHERE user_id = ${userId};
         `;
-				}
-				timeoutMap.delete(userId);
-			}, 1000 * 25);
+					}
+					timeoutMap.delete(userId);
+				}, 1000 * 25);
 
-			timeoutMap.set(userId, timeout);
+				timeoutMap.set(userId, timeout);
+			} catch (error) {
+				console.error(`Failed to update user ${userId} status`, error);
+			}
 		};
 
 		setOnline();
