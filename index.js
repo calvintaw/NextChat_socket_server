@@ -277,6 +277,11 @@ io.on("connection", (socket) => {
 });
 
 const PORT = process.env.PORT || 8000;
+
 server.listen(PORT, () => {
-	console.log(`server running at http://localhost:${PORT}`);
+	if (process.env.NODE_ENV === "production") {
+		console.log(`✅ Server running in production on port ${PORT}`);
+	} else {
+		console.log(`🚀 Server running locally at http://localhost:${PORT}`);
+	}
 });
