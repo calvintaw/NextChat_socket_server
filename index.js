@@ -86,130 +86,81 @@ io.on("connection", (socket) => {
 		console.log(`room_id: reaction removed ${room_id} content: ${emoji}`);
 	});
 
-	socket.on(
-		"message",
-		async ({ tempId, room_id, sender_id, sender_image, sender_display_name, content, type = "text", replyTo }) => {
+	// msg is of LocalMessageType in actions.ts
+	socket.on("message", (msg) => {
+		io.to(msg.room_id).emit("message", msg);
+		console.log("Sent:", { name: msg.sender_display_name, msg: msg.content });
+	});
+
+	// msg is of LocalMessageType in actions.ts
+	socket.on("system", async (msg) => {
+		try {
+			io.to(msg.room_id).emit("message", msg);
+			console.log("Sent system:", { name: msg.sender_display_name, msg: msg.content });
+
+			// ====== OpenAI Responses API reply ======
 			try {
-				await sql.begin(async (sql) => {
-					const results = await sql`
-					INSERT INTO messages (room_id, sender_id, content, type, replyTo)
-					VALUES (${room_id}, ${sender_id}, ${content}, ${type}, ${replyTo})
-					RETURNING id, created_at
-				`;
+				// const aiResponse = await openai.chat.completions.create({
+				// 	model: "gpt-4o-mini-2024-07-18",
+				// 	messages: [
+				// 		{ role: "system", content: "You are a helpful AI assistant." },
+				// 		{ role: "user", content },
+				// 	],
+				// 	temperature: 0.7,
+				// 	top_p: 0.7,
+				// 	frequency_penalty: 1,
+				// 	max_tokens: 1536,
+				// 	top_k: 50,
+				// });
+				const aiText =
+					// aiResponse?.choices[0].message.content ||
+					"Sorry, I couldn't generate a response.";
+				console.log(`Assistant: ${aiText}`);
 
-					const { id, created_at } = results[0];
-
-					const msg = {
-						id,
-						sender_id,
-						sender_image,
-						sender_display_name,
-						content,
-						type,
-						createdAt: created_at,
-						replyTo,
-						tempId,
-					};
-
-					io.to(room_id).emit("message", msg);
-					console.log("Sent:", { sender_display_name, content });
-				});
-			} catch (error) {
-				console.error("insert msg failed", error);
-			}
-		}
-	);
-
-	socket.on(
-		"system",
-		async ({ tempId, room_id, sender_id, sender_image, sender_display_name, content, type = "text", replyTo }) => {
-			try {
-				await sql.begin(async (sql) => {
-					const results = await sql`
-					INSERT INTO messages (room_id, sender_id, content, type, replyTo)
-					VALUES (${room_id}, ${sender_id}, ${content}, ${type}, ${replyTo})
-					RETURNING id, created_at
-				`;
-					const msg = {
-						id: results[0].id,
-						tempId,
-						sender_id,
-						sender_image,
-						sender_display_name,
-						content,
-						type,
-						createdAt: results[0].created_at,
-						replyTo,
-					};
-
-					io.to(room_id).emit("message", msg);
-					console.log("Sent system:", { sender_display_name, content });
-
-					// ====== OpenAI Responses API reply ======
-					try {
-						// const aiResponse = await openai.chat.completions.create({
-						// 	model: "gpt-4o-mini-2024-07-18",
-						// 	messages: [
-						// 		{ role: "system", content: "You are a helpful AI assistant." },
-						// 		{ role: "user", content },
-						// 	],
-						// 	temperature: 0.7,
-						// 	top_p: 0.7,
-						// 	frequency_penalty: 1,
-						// 	max_tokens: 1536,
-						// 	top_k: 50,
-						// });
-						const aiText =
-							// aiResponse?.choices[0].message.content ||
-							"Sorry, I couldn't generate a response.";
-						console.log(`Assistant: ${aiText}`);
-
-						// Insert AI reply into DB
-						const aiResults = await sql`
+				// Insert AI reply into DB
+				const aiResults = await sql`
 							INSERT INTO messages (room_id, sender_id, content, type)
-							VALUES (${room_id}, 'system', ${aiText}, 'text')
+							VALUES (${msg.room_id}, 'system', ${aiText}, 'text')
 							RETURNING id, created_at
 						`;
 
-						const { id: aiId, created_at: aiCreatedAt } = aiResults[0];
+				const { id: aiId, created_at: aiCreatedAt } = aiResults[0];
 
-						// Send AI message back to the room
-						const aiMsg = {
-							id: aiId,
-							sender_id: "system",
-							sender_image: "https://ydcbbjaovlxvvoecbblp.supabase.co/storage/v1/object/public/uploads/system.png",
-							sender_display_name: "AI BOT",
-							content: aiText,
-							type: "text",
-							createdAt: aiCreatedAt,
-						};
+				// Send AI message back to the room
+				const aiMsg = {
+					id: aiId,
+					sender_id: "system",
+					sender_image: "https://ydcbbjaovlxvvoecbblp.supabase.co/storage/v1/object/public/uploads/system.png",
+					sender_display_name: "AI BOT",
+					content: aiText,
+					type: "text",
+					createdAt: aiCreatedAt,
+				};
 
-						io.to(room_id).emit("message", aiMsg);
-						console.log("AI Sent:", aiMsg);
-					} catch (err) {
-						console.error("OpenAI error:", err);
+				io.to(msg.room_id).emit("message", aiMsg);
+				console.log("AI Sent:", aiMsg);
+			} catch (err) {
+				console.error("OpenAI error:", err);
 
-						// @ts-ignore
-						if (err.code === "insufficient_quota" || err.status === 429) {
-							console.warn("OpenAI quota exceeded. Sending fallback message.");
-							io.to(room_id).emit("message", {
-								id: "system-fallback-" + Date.now(),
-								sender_id: "system",
-								sender_display_name: "AI BOT",
-								sender_image: "https://ydcbbjaovlxvvoecbblp.supabase.co/storage/v1/object/public/uploads/system.png",
-								content:
-									"AI reply unavailable (quota exceeded). [Sorry, I have not found new models that offer free tiers]",
-								type: "text",
-								createdAt: new Date().toISOString(),
-							});
-						}
-					}
-				});
-			} catch (error) {
-				console.error("insert msg failed", error);
+				// @ts-ignore
+				if (err.code === "insufficient_quota" || err.status === 429) {
+					console.warn("OpenAI quota exceeded. Sending fallback message.");
+					io.to(msg.room_id).emit("message", {
+						id: "system-fallback-" + Date.now(),
+						sender_id: "system",
+						sender_display_name: "AI BOT",
+						sender_image: "https://ydcbbjaovlxvvoecbblp.supabase.co/storage/v1/object/public/uploads/system.png",
+						content:
+							"AI reply unavailable (quota exceeded). [Sorry, I have not found new models that offer free tiers]",
+						type: "text",
+						createdAt: new Date().toISOString(),
+					});
+				}
 			}
+		} catch (error) {
+			console.error("insert msg failed", error);
 		}
-	);
+	});
 
 	socket.on("refresh-contacts-page", (currentUser_id, targetUser_id) => {
 		io.to(currentUser_id).emit("refresh-contacts-page");
