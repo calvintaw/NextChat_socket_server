@@ -86,17 +86,17 @@ io.on("connection", (socket) => {
 		console.log(`room_id: reaction removed ${room_id} content: ${emoji}`);
 	});
 
-	// msg is of LocalMessageType in actions.ts
+	// msg is of type { id: string; room_id: string; sender_id: string  }
 	socket.on("message", (msg) => {
 		io.to(msg.room_id).emit("message", msg);
-		console.log("Sent:", { name: msg.sender_display_name, msg: msg.content });
+		console.log("Sent Chat:", msg);
 	});
 
-	// msg is of LocalMessageType in actions.ts
+	// msg is of type { id: string; room_id: string; sender_id: string  }
 	socket.on("system", async (msg) => {
 		try {
 			io.to(msg.room_id).emit("message", msg);
-			console.log("Sent system:", { name: msg.sender_display_name, msg: msg.content });
+			console.log("Sent system:", msg);
 
 			// ====== OpenAI Responses API reply ======
 			try {
