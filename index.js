@@ -89,7 +89,15 @@ io.on("connection", (socket) => {
 
 	// msg is of type { id: string; room_id: string; sender_id: string  }
 	socket.on("message", (msg, callback) => {
+	socket.on("message", (msg, callback) => {
 		io.to(msg.room_id).emit("message", msg);
+
+		// // ack to client
+		callback();
+
+		// callback({ status: "ok", type: "user", receivedAt: Date.now(), msg: msg.content });
+
+		// console.log("Sent Chat:", msg);
 
 		// // ack to client
 		callback();
@@ -101,8 +109,14 @@ io.on("connection", (socket) => {
 
 	// msg is of type { id: string; room_id: string; sender_id: string  }
 	socket.on("system", async (msg, callback) => {
+	socket.on("system", async (msg, callback) => {
 		try {
 			io.to(msg.room_id).emit("message", msg);
+			// // ack to client
+			callback();
+
+			// callback({ status: "ok", type: "system", receivedAt: Date.now(), msg: msg.content });
+			// console.log("Sent system:", msg);
 			// // ack to client
 			callback();
 
