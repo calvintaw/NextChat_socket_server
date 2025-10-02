@@ -53,37 +53,34 @@ io.on("connection", (socket) => {
 
 	socket.on("join", (id) => {
 		socket.join(id);
-			console.log(`socket joined: ROOM: [${id}]`);
-		
+		console.log(`socket joined: ROOM: [${id}]`);
 	});
 
 	socket.on("typing started", (room_id, display_name) => {
 		io.to(room_id).emit("typing started", display_name);
 	});
 
-	socket.on("typing stopped", (room_id) => {
-		io.to(room_id).emit("typing stopped");
+	socket.on("typing stopped", (room_id, display_name) => {
+		io.to(room_id).emit("typing stopped", display_name);
 	});
 
-	socket.on("create_dm", async ({}) => {});
-
 	socket.on("delete message", async (id, room_id) => {
-		io.to(room_id).emit("message deleted", id);
+		socket.to(room_id).emit("message deleted", id);
 		console.log(`room_id: msg deleted ${room_id}`);
 	});
 
 	socket.on("edit message", async (id, room_id, content) => {
-		io.to(room_id).emit("message edited", id, content);
+		socket.to(room_id).emit("message edited", id, content);
 		console.log(`room_id: msg edited ${room_id} content: ${content}`);
 	});
 
 	socket.on("add_reaction_msg", (id, user_id, room_id, emoji) => {
-		io.to(room_id).emit("add_reaction_msg", id, user_id, emoji, "add");
+		socket.to(room_id).emit("add_reaction_msg", id, user_id, emoji, "add");
 		console.log(`room_id: reaction added ${room_id} content: ${emoji}`);
 	});
 
 	socket.on("remove_reaction_msg", (id, user_id, room_id, emoji) => {
-		io.to(room_id).emit("remove_reaction_msg", id, user_id, emoji, "remove");
+		socket.to(room_id).emit("remove_reaction_msg", id, user_id, emoji, "remove");
 		console.log(`room_id: reaction removed ${room_id} content: ${emoji}`);
 	});
 
@@ -186,7 +183,7 @@ io.on("connection", (socket) => {
 	});
 
 	socket.on("refresh-contacts-page", (currentUser_id, targetUser_id) => {
-		io.to(currentUser_id).emit("refresh-contacts-page");
+		// currentUser id is for backward compatability in case current changes do not work
 		io.to(targetUser_id).emit("refresh-contacts-page");
 		console.log("refresh-contacts-page", currentUser_id, targetUser_id);
 	});
