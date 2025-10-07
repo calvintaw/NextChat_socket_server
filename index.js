@@ -21,6 +21,11 @@ const SYSTEM_USER = {
 	username: process.env.SYSTEM_USER_USERNAME,
 };
 
+const client = new OpenAI({
+	baseURL: "https://router.huggingface.co/v1",
+	apiKey: process.env.HF_API_KEY,
+});
+
 if (!process.env.POSTGRES_URL) {
 	throw new Error("POSTGRES_URL environment variable is not defined");
 }
@@ -395,44 +400,8 @@ server.listen(PORT, () => {
 	}
 });
 
-const client = new OpenAI({
-	baseURL: "https://router.huggingface.co/v1",
-	apiKey: process.env.HF_API_KEY,
-});
 
-app.use(express.json());
 
-app.post("/ask", async (req, res) => {
-	const { question } = req.body;
-
-	if (!question) {
-		return res.status(400).json({ error: "Please provide a question." });
-	}
-
-	try {
-		const response = await client.chat.completions.create({
-			model: "deepseek-ai/DeepSeek-R1-Distill-Qwen-1.5B:nscale",
-			messages: [
-				{
-					role: "system",
-					content:
-						"You are a helpful assistant. Answer the question in 1–2 short sentences. Do not include lengthy reasoning.",
-				},
-				{ role: "user", content: question },
-			],
-			max_completion_tokens: 250,
-			temperature: 0.2,
-		});
-
-		console.log("AI Response: ", response.choices[0].message);
-		const answer = response.choices[0].message.content ?? "Sorry, I couldn't generate an answer.";
-
-		return res.json({ answer });
-	} catch (err) {
-		console.error("AI error:", err);
-		return res.status(500).json({ error: "Failed to get AI response." });
-	}
-});
 
 function sanitizeForHTML(input) {
 	return input.replace(/\r?\n|\r/g, " "); // Replace line breaks with space
