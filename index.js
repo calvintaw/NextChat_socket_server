@@ -5,13 +5,21 @@ import { dirname, join } from "node:path";
 import { Server } from "socket.io";
 import postgres from "postgres";
 import "dotenv/config";
-
 import { OpenAI } from "openai";
+import console from "node:console";
 
-const openai = new OpenAI({
-	baseURL: "https://api.aimlapi.com/v1",
-	apiKey: process.env["OPENAI_API_KEY"],
-});
+// const openai = new OpenAI({
+// 	baseURL: "https://api.aimlapi.com/v1",
+// 	apiKey: process.env["OPENAI_API_KEY"],
+// });
+const SYSTEM_USER = {
+	id: process.env.SYSTEM_USER_ID,
+	display_name: process.env.SYSTEM_USER_DISPLAY_NAME,
+	email: process.env.SYSTEM_USER_EMAIL,
+	image: process.env.SYSTEM_USER_IMAGE,
+	created_at: process.env.SYSTEM_USER_CREATED_AT,
+	username: process.env.SYSTEM_USER_USERNAME,
+};
 
 if (!process.env.POSTGRES_URL) {
 	throw new Error("POSTGRES_URL environment variable is not defined");
@@ -93,75 +101,61 @@ io.on("connection", (socket) => {
 	});
 
 	// // msg is of type { id: string; room_id: string; sender_id: string  }
-	// socket.on("system", async (msg, callback) => {
-	// 	try {
-	// 		socket.to(msg.room_id).emit("message", msg);
-	// 		// // ack to client
-	// 		callback();
+	socket.on("system", async ({ msg_content, room_id }, callback) => {
+		try {
+			callback();
 
-	// 		// ====== OpenAI Responses API reply ======
-	// 		try {
-	// 			// const aiResponse = await openai.chat.completions.create({
-	// 			// 	model: "gpt-4o-mini-2024-07-18",
-	// 			// 	messages: [
-	// 			// 		{ role: "system", content: "You are a helpful AI assistant." },
-	// 			// 		{ role: "user", content },
-	// 			// 	],
-	// 			// 	temperature: 0.7,
-	// 			// 	top_p: 0.7,
-	// 			// 	frequency_penalty: 1,
-	// 			// 	max_tokens: 1536,
-	// 			// 	top_k: 50,
-	// 			// });
-	// 			const aiText =
-	// 				// aiResponse?.choices[0].message.content ||
-	// 				"Sorry, I couldn't generate a response.";
-	// 			console.log(`Assistant: ${aiText}`);
+			// ====== OpenAI Responses API reply ======
+			try {
+				const response = await client.chat.completions.create({
+					model: "deepseek-ai/DeepSeek-R1-Distill-Qwen-1.5B:nscale",
+					messages: [
+						{
+							role: "system",
+							content:
+								"You are a helpful assistant. Answer the question in 1–2 short sentences. Do not include lengthy reasoning.",
+						},
+						{ role: "user", content: msg_content },
+					],
+					temperature: 0.2,
+				});
 
-	// 			// Insert AI reply into DB
-	// 			const aiResults = await sql`
-	// 						INSERT INTO messages (room_id, sender_id, content, type)
-	// 						VALUES (${msg.room_id}, 'system', ${aiText}, 'text')
-	// 						RETURNING id, created_at
-	// 					`;
+				console.log("AI Response: ", response.choices[0].message);
+				const answer = sanitizeForHTML(response.choices[0].message.content) ?? "Sorry, I couldn't generate an answer.";
 
-	// 			const { id: aiId, created_at: aiCreatedAt } = aiResults[0];
+				// Insert AI reply into DB
+				//@ts-ignore
+				const aiResults = await sql`
+							INSERT INTO messages (room_id, sender_id, content, type)
+							VALUES (${room_id}, ${SYSTEM_USER.id}, ${answer}, 'text')
+							RETURNING id, created_at
+						`;
 
-	// 			// Send AI message back to the room
-	// 			const aiMsg = {
-	// 				id: aiId,
-	// 				sender_id: "system",
-	// 				sender_image: "https://ydcbbjaovlxvvoecbblp.supabase.co/storage/v1/object/public/uploads/system.png",
-	// 				sender_display_name: "AI BOT",
-	// 				content: aiText,
-	// 				type: "text",
-	// 				createdAt: aiCreatedAt,
-	// 			};
+				const { id: aiId, created_at: aiCreatedAt } = aiResults[0];
 
-	// 			io.to(msg.room_id).emit("message", aiMsg);
-	// 			console.log("AI Sent:", aiMsg);
-	// 		} catch (err) {
-	// 			console.error("OpenAI error:", err);
+				// Send AI message back to the room
+				const aiMsg = {
+					id: aiId,
+					sender_id: SYSTEM_USER.id,
+					sender_display_name: SYSTEM_USER.display_name,
+					sender_image: SYSTEM_USER.image,
+					content: answer,
+					type: "text",
+					createdAt: aiCreatedAt,
+					edited: false,
+					reactions: {},
+					replyTo: null,
+				};
 
-	// 			// @ts-ignore
-	// 			if (err.code === "insufficient_quota" || err.status === 429) {
-	// 				console.warn("OpenAI quota exceeded. Sending fallback message.");
-	// 				io.to(msg.room_id).emit("message", {
-	// 					id: "system-fallback-" + Date.now(),
-	// 					sender_id: "system",
-	// 					sender_display_name: "AI BOT",
-	// 					sender_image: "https://ydcbbjaovlxvvoecbblp.supabase.co/storage/v1/object/public/uploads/system.png",
-	// 					content:
-	// 						"AI reply unavailable (quota exceeded). [Sorry, I have not found new models that offer free tiers]",
-	// 					type: "text",
-	// 					createdAt: new Date().toISOString(),
-	// 				});
-	// 			}
-	// 		}
-	// 	} catch (error) {
-	// 		console.error("insert msg failed", error);
-	// 	}
-	// });
+				io.to(room_id).emit("message", aiMsg);
+				console.log("AI Sent:", aiMsg);
+			} catch (err) {
+				console.error(err);
+			}
+		} catch (error) {
+			console.error("insert msg failed", error);
+		}
+	});
 
 	socket.on("refresh-contacts-page", (currentUser_id, targetUser_id) => {
 		// currentUser id is for backward compatability in case current changes do not work
@@ -400,3 +394,46 @@ server.listen(PORT, () => {
 		console.log(`🚀 Server running locally at http://localhost:${PORT}`);
 	}
 });
+
+const client = new OpenAI({
+	baseURL: "https://router.huggingface.co/v1",
+	apiKey: process.env.HF_API_KEY,
+});
+
+app.use(express.json());
+
+app.post("/ask", async (req, res) => {
+	const { question } = req.body;
+
+	if (!question) {
+		return res.status(400).json({ error: "Please provide a question." });
+	}
+
+	try {
+		const response = await client.chat.completions.create({
+			model: "deepseek-ai/DeepSeek-R1-Distill-Qwen-1.5B:nscale",
+			messages: [
+				{
+					role: "system",
+					content:
+						"You are a helpful assistant. Answer the question in 1–2 short sentences. Do not include lengthy reasoning.",
+				},
+				{ role: "user", content: question },
+			],
+			max_completion_tokens: 250,
+			temperature: 0.2,
+		});
+
+		console.log("AI Response: ", response.choices[0].message);
+		const answer = response.choices[0].message.content ?? "Sorry, I couldn't generate an answer.";
+
+		return res.json({ answer });
+	} catch (err) {
+		console.error("AI error:", err);
+		return res.status(500).json({ error: "Failed to get AI response." });
+	}
+});
+
+function sanitizeForHTML(input) {
+	return input.replace(/\r?\n|\r/g, " "); // Replace line breaks with space
+}
