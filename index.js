@@ -60,6 +60,7 @@ app.get("/", (req, res) => {
 
 const userSockets = new Map();
 const timeoutMap = new Map();
+let rooms = {};
 
 io.on("connection", (socket) => {
 	//=======================================
@@ -229,90 +230,83 @@ io.on("connection", (socket) => {
 	// 	});
 	// }
 
-	const userSockets = new Map(); // userId -> Set<socket>
-	const timeoutMap = new Map(); // userId -> Timeout
+	const userId = socket.handshake.auth?.id;
+	const username = socket.handshake.auth?.name;
 
-	io.on("connection", (socket) => {
-		const userId = socket.handshake.auth?.id;
-		const username = socket.handshake.auth?.name;
+	if (!userId || !username) return;
 
-		if (!userId || !username) return;
+	// Add socket to user
+	if (!userSockets.has(userId)) userSockets.set(userId, new Set());
+	userSockets.get(userId).add(socket);
 
-		// Add socket to user
-		if (!userSockets.has(userId)) userSockets.set(userId, new Set());
-		userSockets.get(userId).add(socket);
+	const clearOfflineTimeout = () => {
+		if (timeoutMap.has(userId)) {
+			clearTimeout(timeoutMap.get(userId));
+			timeoutMap.delete(userId);
+		}
+	};
 
-		const clearOfflineTimeout = () => {
-			if (timeoutMap.has(userId)) {
-				clearTimeout(timeoutMap.get(userId));
-				timeoutMap.delete(userId);
-			}
-		};
+	const markOnline = async () => {
+		clearOfflineTimeout();
 
-		const markOnline = async () => {
-			clearOfflineTimeout();
+		socket.broadcast.emit("online", userId, true);
 
-			socket.broadcast.emit("online", userId, true);
-
-			await sql`
+		await sql`
       INSERT INTO user_status (user_id, online)
       VALUES (${userId}, TRUE)
       ON CONFLICT (user_id)
       DO UPDATE SET online = TRUE;
     `;
-		};
+	};
 
-		const markOffline = async () => {
-			socket.broadcast.emit("offline", userId, false);
-			await sql`UPDATE user_status SET online = FALSE WHERE user_id = ${userId};`;
-			console.log("set offline:", userId);
-		};
+	const markOffline = async () => {
+		socket.broadcast.emit("offline", userId, false);
+		await sql`UPDATE user_status SET online = FALSE WHERE user_id = ${userId};`;
+		console.log("set offline:", userId);
+	};
 
-		// When user connects or sends heartbeat
-		const handleHeartbeat = async () => {
-			await markOnline();
+	// When user connects or sends heartbeat
+	const handleHeartbeat = async () => {
+		await markOnline();
 
-			// Schedule offline after 15 seconds of no heartbeat
-			const timeout = setTimeout(async () => {
-				const sockets = userSockets.get(userId);
-				if (!sockets || sockets.size === 0) {
-					await markOffline();
-				}
-				timeoutMap.delete(userId);
-			}, 15 * 1000);
-
-			timeoutMap.set(userId, timeout);
-		};
-
-		// --- Initial online ---
-		handleHeartbeat();
-
-		// --- Heartbeat event from client ---
-		socket.on("online", handleHeartbeat);
-
-		// --- On disconnect ---
-		socket.on("disconnect", () => {
+		// Schedule offline after 15 seconds of no heartbeat
+		const timeout = setTimeout(async () => {
 			const sockets = userSockets.get(userId);
-			if (sockets) {
-				sockets.delete(socket);
-				if (sockets.size === 0) {
-					// No active connections - start countdown to offline
-					const timeout = setTimeout(async () => {
-						const socketsStill = userSockets.get(userId);
-						if (!socketsStill || socketsStill.size === 0) {
-							await markOffline();
-						}
-						timeoutMap.delete(userId);
-					}, 22.5 * 1000);
-					timeoutMap.set(userId, timeout);
-				}
+			if (!sockets || sockets.size === 0) {
+				await markOffline();
 			}
-		});
+			timeoutMap.delete(userId);
+		}, 15 * 1000);
+
+		timeoutMap.set(userId, timeout);
+	};
+
+	// --- Initial online ---
+	handleHeartbeat();
+
+	// --- Heartbeat event from client ---
+	socket.on("online", handleHeartbeat);
+
+	// --- On disconnect ---
+	socket.on("disconnect", () => {
+		const sockets = userSockets.get(userId);
+		if (sockets) {
+			sockets.delete(socket);
+			if (sockets.size === 0) {
+				// No active connections - start countdown to offline
+				const timeout = setTimeout(async () => {
+					const socketsStill = userSockets.get(userId);
+					if (!socketsStill || socketsStill.size === 0) {
+						await markOffline();
+					}
+					timeoutMap.delete(userId);
+				}, 22.5 * 1000);
+				timeoutMap.set(userId, timeout);
+			}
+		}
 	});
 
 	// ============================================
-
-	let rooms = {};
 
 	socket.on("create-room", (roomId) => {
 		// Logic to create a new room
@@ -399,9 +393,6 @@ server.listen(PORT, () => {
 		console.log(`🚀 Server running locally at http://localhost:${PORT}`);
 	}
 });
-
-
-
 
 function sanitizeForHTML(input) {
 	return input.replace(/\r?\n|\r/g, " "); // Replace line breaks with space
